@@ -1,183 +1,180 @@
 Prediction Assignment Writeup
 
-Background
-Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+## Background  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: 
+http://groupware.les.inf.puc-rio.br/har
+ (see the section on the Weight Lifting Exercise Dataset).    
 
-Data 
+## Data   
 The training data for this project are available here: 
+
 https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
 The test data are available here:
+
 https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
 
-Analysis
-First, we begin by downloading the training and testing datasets and upload them in the R Studio.
-1. Then, we load some useful packages using:
-> # Require the necessary packages
-> require(data.table)
-Loading required package: data.table
-data.table 1.12.8 using 16 threads (see ?getDTthreads).  Latest news: r-datatable.com
-> require(dplyr)
-Loading required package: dplyr
+The data for this project come from this source: 
+http://groupware.les.inf.puc-rio.br/har
+. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
 
-Attaching package: ‘dplyr’
+## Analysis
 
-The following objects are masked from ‘package:data.table’:
+First, we load some useful packages using: 
+```{r warning=FALSE, error=FALSE}
+library(rattle)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(RColorBrewer)
 
-    between, first, last
+## Getting Data  
+First of all, we need to set current working directory.  
+```{r warning=FALSE, error=FALSE}
+setwd("~/GitHub/Practical-Machine-Learning-Johns-Hopkins-Bloomberg-School-of-Public-Health-Coursera/Project")
+```  
 
-The following objects are masked from ‘package:stats’:
+The following code fragment downloads the dataset to the `data` folder in the current working directory.  
+```{r warning=FALSE, error=FALSE}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile = trainFile, method = "curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile = testFile, method = "curl")
+}
+rm(trainUrl)
+rm(testUrl)
+```  
 
-    filter, lag
+## Reading Data  
+After downloading the data from the data source, we can read the two csv files into two data frames.  
+```{r warning=FALSE, error=FALSE}
+trainRaw <- read.csv(trainFile)
+testRaw <- read.csv(testFile)
+dim(trainRaw)
+dim(testRaw)
+rm(trainFile)
+rm(testFile)
+```  
+The training data set contains `r dim(trainRaw)[1]` observations and `r dim(trainRaw)[2]` variables, while the testing data set contains `r dim(testRaw)[1]` observations and `r dim(testRaw)[2]` variables. The `classe` variable in the training set is the outcome to predict.  
 
-The following objects are masked from ‘package:base’:
+## Cleaning Data  
+Now we will clean the data, to get rid of observations with missing values, NA and unwanted values.  
 
-    intersect, setdiff, setequal, union
+1. Cleaning the <b>Near Zero Variance</b> Variables.  
+```{r warning=FALSE, error=FALSE}
+NZV <- nearZeroVar(trainRaw, saveMetrics = TRUE)
+head(NZV, 20)
+training01 <- trainRaw[, !NZV$nzv]
+testing01 <- testRaw[, !NZV$nzv]
+dim(training01)
+dim(testing01)
+rm(trainRaw)
+rm(testRaw)
+rm(NZV)
+```  
 
-> require(caret)
-Loading required package: caret
-Loading required package: ggplot2
-Loading required package: lattice
-2. Then we will load the data into memory.
-> # Load the training data from working directory
-> train <- read.csv("training.csv")
-> 
-> # Load the testing data from working directory
-> test <- read.csv("testing.csv")
-3. Next, we need to prepare the data for modelling. We can see is a lot of data with NA or empty values. Let’s remove those.
-> Percentage_max_NA = 90
-> maxNACount <- nrow(train) / 100 * Percentage_max_NA
-> removeColumns <- which(colSums(is.na(train) | train=="") > maxNACount)
-> training.cleaned <- train[,-removeColumns]
-> testing.cleaned <- test[,-removeColumns]
+[1] 19622   100
+[1]  20 100
 
-> #that reduces the columns to only 60 columns
-> dim(training.cleaned)
-[1] 19622    60
+2. Removing not required vbalues.  
+```{r warning=FALSE, error=FALSE}
+regex <- grepl("^X|timestamp|user_name", names(training01))
+training <- training01[, !regex]
+testing <- testing01[, !regex]
+rm(regex)
+rm(training01)
+rm(testing01)
+dim(training)
+dim(testing)
+```  
+[1] 19622    95
+[1] 20 95
 
-> dim(testing.cleaned)
-[1] 20 60
 
-> #Investigating the data we can see that the seven first columns have a sequencial number (the first)
-> #and variations of the timestamp that we are not using for this analysis so we will eliminate those columns remaining 53
-> trainOK<-training.cleaned[,-c(1:6)]
-> testOK<-testing.cleaned[,-c(1:6)]
-> dim(trainOK);dim(testOK)
-[1] 19622    54
-[1] 20 54
+3. Removing NA values`.  
+```{r warning=FALSE, error=FALSE}
+cond <- (colSums(is.na(training)) == 0)
+training <- training[, cond]
+testing <- testing[, cond]
+rm(cond)
+```  
 
-> exerCorrmatrix<-cor(trainOK[sapply(trainOK, is.numeric)])  
-> corrplot(exerCorrmatrix,order="original", method="circle", type="lower", tl.cex=0.45, tl.col="black", number.cex=0.25) 
+Now, the cleaned training data set contains `r dim(training)[1]` observations and `r dim(training)[2]` variables, while the testing data set contains `r dim(testing)[1]` observations and `r dim(testing)[2]` variables.  
 
- 
-4. Now we will split the current training in a test and train set in order to validate it.
-> set.seed(2022)
-> inTrain<-createDataPartition(trainOK$classe, p=3/4, list=FALSE)
-> train<-trainOK[inTrain,]
-> valid<-trainOK[-inTrain,]
-After analysing the principal components, we got that 25 components are necessary to capture 0.95 of the variances. But it demands a lot of machine processing so, we decided by a 0.80 thresh to capture 80% of the variance using 13 components.
-> PropPCA<-preProcess(train[,-54],method="pca", thresh=0.8)
-> PropPCA
-Created from 14718 samples and 53 variables
+Correlation Matrix of Columns in the Training Data set.  
+```{r warning=FALSE, error=FALSE}
+corrplot(cor(training[, -length(names(training))]), method = "color", tl.cex = 0.5)
+```  
 
-Pre-processing:
-  - centered (53)
-  - ignored (0)
-  - principal component signal extraction (53)
-  - scaled (53)
+## Partitioning Training dataset into training (70%) and validation (30%)
+The validation dataset will be used to conduct cross validation later. 
+```{r warning=FALSE, error=FALSE}
+inTrain <- createDataPartition(training$classe, p = 0.70, list = FALSE)
+validation <- training[-inTrain, ]
+training <- training[inTrain, ]
+rm(inTrain)
+```  
+The Dataset now consists of `r dim(training)[2]` variables with the observations divided as following:  
+1. Training Data: `r dim(training)[1]` observations.  
+2. Validation Data: `r dim(validation)[1]` observations.  
+3. Testing Data: `r dim(testing)[1]` observations.  
 
-PCA needed 13 components to capture 80 percent of the variance
-Pre-processing
+## Data Modelling  
 
-> #create the preProc object, excluding the response (classe)
-> preProc  <- preProcess(train[,-54], 
-+                        method = "pca",
-+                        pcaComp = 13, thresh=0.8) 
-> #Apply the processing to the train and test data, and add the response 
-> #to the dataframes
-> train_pca <- predict(preProc, train[,-54])
-> train_pca$classe <- train$classe
-> #train_pca has only 13 principal components plus classe
-> valid_pca <- predict(preProc, valid[,-54])
-> valid_pca$classe <- valid$classe
-> #valid_pca has only 13 principal components plus classe
+### Decision Tree  
+We fit a predictive model for activity recognition using <b>Decision Tree</b> algorithm.  
+```{r warning=FALSE, error=FALSE}
+modelTree <- rpart(classe ~ ., data = training, method = "class")
+prp(modelTree)
+```  
 
-Model examination
+### Random Forest
+We fit a predictive model for activity recognition using <b>Random Forest</b> algorithm because it automatically selects important variables and is robust to correlated covariates & outliers in general.  
+We will use <b>5-fold cross validation</b> when applying the algorithm.  
+```{r warning=FALSE, error=FALSE}
+modelRF <- train(classe ~ ., data = training, method = "rf", trControl = trainControl(method = "cv", 5), ntree = 250)
+modelRF
+```  
 
-At this point, we have clean data that we can use for building models and we will use the Random Forest model
-> #create Random Forest model
-> start <- proc.time()
-> fitControl<-trainControl(method="cv", number=5, allowParallel=TRUE)
-> fit_rf<-train(classe ~., data=train_pca, method="rf", trControl=fitControl)
-> print(fit_rf, digits=4)
 Random Forest 
 
-14718 samples
-   13 predictor
+13737 samples
+   53 predictor
     5 classes: 'A', 'B', 'C', 'D', 'E' 
 
 No pre-processing
 Resampling: Cross-Validated (5 fold) 
-Summary of sample sizes: 11774, 11775, 11774, 11774, 11775 
+Summary of sample sizes: 10991, 10990, 10989, 10989, 10989 
 Resampling results across tuning parameters:
 
-  mtry  Accuracy  Kappa 
-   2    0.9596    0.9490
-   7    0.9534    0.9411
-  13    0.9453    0.9308
+  mtry  Accuracy   Kappa    
+   2    0.9935939  0.9918964
+  27    0.9975248  0.9968692
+  53    0.9953408  0.9941063
 
 Accuracy was used to select the optimal model using the largest value.
-The final value used for the model was mtry = 2.
+The final value used for the model was mtry = 27.
 
-> proc.time() - start
-    user   system  elapsed 
- 169.718    8.189 2753.557 
+The Estimated Accuracy of the Random Forest Model is `r accuracy[1]*100`% and the Estimated Out-of-Sample Error is `r ose*100`%.  
+Random Forests yielded better Results, as expected!  
 
-> predict_rf<-predict(fit_rf,valid_pca)  
-> (conf_rf<-confusionMatrix(as.factor(valid_pca$classe), predict_rf))
-Confusion Matrix and Statistics
+## Predicting The Manner of Exercise for Test Data Set  
+Now, we apply the <b>Random Forest</b> model to the original testing data set downloaded from the data source. We remove the problem_id column first.  
+```{r warning=FALSE, error=FALSE}
+rm(accuracy)
+rm(ose)
+predict(modelRF, testing[, -length(names(testing))])
+```  
 
-          Reference
-Prediction    A    B    C    D    E
-         A 1369   10    8    7    1
-         B   15  917   14    3    0
-         C   13   20  810    7    5
-         D    0    0   41  762    1
-         E    0    5   13    5  878
-
-Overall Statistics
-                                          
-               Accuracy : 0.9657          
-                 95% CI : (0.9603, 0.9707)
-    No Information Rate : 0.2849          
-    P-Value [Acc > NIR] : < 2.2e-16       
-                                          
-                  Kappa : 0.9567          
-                                          
- Mcnemar's Test P-Value : 3.222e-07       
-
-Statistics by Class:
-
-                     Class: A Class: B Class: C Class: D Class: E
-Sensitivity            0.9800   0.9632   0.9142   0.9719   0.9921
-Specificity            0.9926   0.9919   0.9888   0.9898   0.9943
-Pos Pred Value         0.9814   0.9663   0.9474   0.9478   0.9745
-Neg Pred Value         0.9920   0.9912   0.9812   0.9946   0.9983
-Prevalence             0.2849   0.1941   0.1807   0.1599   0.1805
-Detection Rate         0.2792   0.1870   0.1652   0.1554   0.1790
-Detection Prevalence   0.2845   0.1935   0.1743   0.1639   0.1837
-Balanced Accuracy      0.9863   0.9776   0.9515   0.9809   0.9932
-
-> (accuracy_rf<-conf_rf$overall['Accuracy'])
- Accuracy 
-0.9657423
-
-We can now say that for this data-set, random forest method has an accuracy of 0.96.
-Prediction on Testing Set
-Applying the Random Forest to predict the outcome variable classe for the test set to make predictions on the 20 data points from the original testing dataset.
-
-> test_pca <- predict(preProc, testOK[,-54])
-> test_pca$problem_id <- testOK$problem_id
-> (predict(fit_rf, test_pca))
- [1] B A C A A E D B A A B C B A E E A B B B
+ [1] B A B A A E D B A A B C B A E E A B B B
 Levels: A B C D E
-
